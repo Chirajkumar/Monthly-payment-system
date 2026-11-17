@@ -3,6 +3,10 @@
   "plugins": ["react", "oxc"],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+    "react/only-export-components": ["warn", {
+      "allowConstantExport": true,
+      "allowExportNames": ["PaymentContext", "AuthContext", "usePayments", "useAuth", "AuthProvider"]
+    }],
+    "react/set-state-in-effect": "off"
   }
 }

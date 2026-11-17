@@ -1,14 +1,12 @@
 const User = require('../models/User');
 const Payment = require('../models/Payment');
-const MonthlyRequirement = require('../models/MonthlyRequirement');
-const cloudinary = require('cloudinary').v2;
 
 // Get all members
 exports.getAllMembers = async (req, res) => {
   try {
     const { search, page = 1, limit = 20 } = req.query;
 
-    let query = { isAdmin: false };
+    let query = { isAdmin: false, isActive: true };
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -121,7 +119,10 @@ exports.deleteMember = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findByIdAndUpdate(id, { isActive: false });
+    const user = await User.findOneAndUpdate(
+      { _id: id, isAdmin: false, isActive: true },
+      { isActive: false }
+    );
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -131,7 +132,7 @@ exports.deleteMember = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Member deactivated successfully'
+      message: 'Member removed successfully'
     });
   } catch (error) {
     res.status(500).json({
@@ -148,14 +149,14 @@ exports.getMonthlyStatus = async (req, res) => {
     const searchMonth = month || new Date().toLocaleString('default', { month: 'long' });
     const searchYear = parseInt(year) || new Date().getFullYear();
 
-    const members = await User.find({ isAdmin: false });
+    const members = await User.find({ isAdmin: false, isActive: true });
 
     const statuses = await Promise.all(members.map(async (member) => {
       const payment = await Payment.findOne({
         userId: member._id,
         month: searchMonth,
         year: searchYear
-      });
+      }).sort({ createdAt: -1 });
 
       return {
         member: {
@@ -172,6 +173,9 @@ exports.getMonthlyStatus = async (req, res) => {
     const paidStatuses = statuses.filter(({ payment }) =>
       payment?.status === 'verified' || payment?.status === 'paid'
     );
+    const pendingStatuses = statuses.filter(({ payment }) =>
+      !payment || !['verified', 'paid'].includes(payment.status)
+    );
 
     res.json({
       success: true,
@@ -179,7 +183,7 @@ exports.getMonthlyStatus = async (req, res) => {
       year: searchYear,
       totalMembers: members.length,
       paid: paidStatuses.length,
-      pending: members.length - paidStatuses.length,
+      pending: pendingStatuses.length,
       data: statuses
     });
   } catch (error) {
@@ -196,10 +200,18 @@ exports.verifyPayment = async (req, res) => {
     const { paymentId } = req.params;
     const { status, rejectionReason } = req.body;
 
-    const normalizedStatus =
-      status === 'approved' || status === 'verified' ? 'verified' :
-      status === 'cancelled' || status === 'rejected' ? 'rejected' :
-      status;
+    const normalizedStatus = status === 'approved' || status === 'verified'
+      ? 'verified'
+      : status === 'cancelled' || status === 'rejected'
+        ? 'rejected'
+        : null;
+
+    if (!normalizedStatus) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment status must be verified or rejected.'
+      });
+    }
 
     const payment = await Payment.findByIdAndUpdate(
       paymentId,
@@ -209,7 +221,7 @@ exports.verifyPayment = async (req, res) => {
         verifiedAt: new Date(),
         ...(rejectionReason && { rejectionReason })
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!payment) {
@@ -221,7 +233,11 @@ exports.verifyPayment = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Payment ${normalizedStatus === 'paid' ? 'approved' : 'cancelled'} successfully`,
+      message: normalizedStatus === 'verified'
+        ? 'Payment approved successfully'
+        : normalizedStatus === 'rejected'
+          ? 'Payment rejected successfully'
+          : `Payment status updated to ${normalizedStatus}`,
       payment
     });
   } catch (error) {
@@ -235,22 +251,31 @@ exports.verifyPayment = async (req, res) => {
 // Get payment statistics
 exports.getPaymentStatistics = async (req, res) => {
   try {
-    const totalMembers = await User.countDocuments({ isAdmin: false });
+    const totalMembers = await User.countDocuments({ isAdmin: false, isActive: true });
     const currentMonth = new Date().toLocaleString('default', { month: 'long' });
     const currentYear = new Date().getFullYear();
 
+    const [activeMemberIds, allMemberIds] = await Promise.all([
+      User.find({ isAdmin: false, isActive: true }).distinct('_id'),
+      User.find({ isAdmin: false }).distinct('_id')
+    ]);
+
     const currentMonthPaid = await Payment.countDocuments({
+      userId: { $in: activeMemberIds },
       month: currentMonth,
       year: currentYear,
       status: { $in: ['paid', 'verified'] }
     });
 
+    const currentMonthPending = Math.max(totalMembers - currentMonthPaid, 0);
+
     const totalCollected = await Payment.aggregate([
-      { $match: { status: { $in: ['paid', 'verified'] } } },
+      { $match: { status: { $in: ['paid', 'verified'] }, userId: { $in: allMemberIds } } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
 
     const monthlyStats = await Payment.aggregate([
+      { $match: { userId: { $in: allMemberIds } } },
       {
         $group: {
           _id: { month: '$month', year: '$year' },
@@ -269,7 +294,7 @@ exports.getPaymentStatistics = async (req, res) => {
           month: currentMonth,
           year: currentYear,
           paid: currentMonthPaid,
-          pending: totalMembers - currentMonthPaid,
+          pending: currentMonthPending,
           total: totalMembers
         },
         totalCollected: totalCollected[0]?.total || 0,

@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiUser, FiCalendar, FiShield, FiMail, FiLock, FiArrowRight } from 'react-icons/fi';
+import { FiUser, FiCalendar, FiShield, FiMail, FiArrowRight } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 import namoLogo from '../../assets/namo-logo.png';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, adminLogin } = useAuth();
+  const { login, registerMember, adminLogin } = useAuth();
   const [activeTab, setActiveTab] = useState('member');
+  const [memberMode, setMemberMode] = useState('login');
   const [memberForm, setMemberForm] = useState({ name: '', dateOfBirth: '' });
   const [adminForm, setAdminForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -15,11 +16,15 @@ const Login = () => {
   const handleMemberSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    const result = await login(memberForm.name, memberForm.dateOfBirth);
+    const result = memberMode === 'register'
+      ? await registerMember(memberForm.name, memberForm.dateOfBirth)
+      : await login(memberForm.name, memberForm.dateOfBirth);
     setLoading(false);
 
-    if (result.success) {
+    if (result.success && memberMode === 'login') {
       navigate('/dashboard');
+    } else if (result.success) {
+      setMemberMode('login');
     }
   };
 
@@ -64,6 +69,7 @@ const Login = () => {
 
         {activeTab === 'member' ? (
           <form onSubmit={handleMemberSubmit} className="auth-form">
+            {memberMode === 'register' && <h2>Register as a member</h2>}
             <label>
               <span>Full name</span>
               <input
@@ -86,7 +92,20 @@ const Login = () => {
             </label>
 
             <button type="submit" className="primary-btn" disabled={loading}>
-              {loading ? 'Signing in...' : 'Login as Member'} <FiArrowRight />
+              {loading
+                ? (memberMode === 'register' ? 'Registering...' : 'Signing in...')
+                : (memberMode === 'register' ? 'Register as Member' : 'Login as Member')}
+              <FiArrowRight />
+            </button>
+            <button
+              type="button"
+              className="auth-mode-toggle"
+              disabled={loading}
+              onClick={() => setMemberMode(memberMode === 'login' ? 'register' : 'login')}
+            >
+              {memberMode === 'register'
+                ? 'Already registered? Log in'
+                : 'New member? Register'}
             </button>
           </form>
         ) : (

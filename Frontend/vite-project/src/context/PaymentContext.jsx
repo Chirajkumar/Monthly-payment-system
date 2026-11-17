@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getCurrentMonthPayment, getPaymentSummary, getPaymentHistory } from '../services/paymentService';
 
 const buildDemoPayment = () => ({
@@ -6,16 +6,16 @@ const buildDemoPayment = () => ({
   month: new Date().toLocaleString('default', { month: 'long' }),
   year: new Date().getFullYear(),
   amount: 200,
-  status: 'paid',
-  transactionId: 'DEMO-KENJILA-001',
+  status: 'pending',
+  transactionId: '',
   paymentProof: '',
 });
 
 const buildDemoSummary = () => ({
-  totalPaid: 1200,
+  totalPaid: 0,
   totalPending: 1,
-  currentMonthStatus: 'paid',
-  monthsPaid: 6,
+  currentMonthStatus: 'pending',
+  monthsPaid: 0,
 });
 
 export const PaymentContext = createContext();
@@ -30,16 +30,16 @@ export const PaymentProvider = ({ children }) => {
   ]);
   const [loading, setLoading] = useState(false);
 
-  const fetchCurrentPayment = async () => {
+  const fetchCurrentPayment = useCallback(async () => {
     try {
       const { data } = await getCurrentMonthPayment();
       setCurrentPayment(data.payment);
-    } catch (error) {
+    } catch {
       setCurrentPayment(buildDemoPayment());
     }
-  };
+  }, []);
 
-  const fetchSummary = async () => {
+  const fetchSummary = useCallback(async () => {
     try {
       const { data } = await getPaymentSummary();
       console.log('📊 PAYMENT SUMMARY:', {
@@ -53,27 +53,38 @@ export const PaymentProvider = ({ children }) => {
       console.error('❌ Error fetching summary:', error);
       setPaymentSummary(buildDemoSummary());
     }
-  };
+  }, []);
 
-  const fetchHistory = async (page = 1, limit = 10) => {
+  const fetchHistory = useCallback(async (page = 1, limit = 10) => {
     setLoading(true);
     try {
       const { data } = await getPaymentHistory(page, limit);
       setPaymentHistory(data.payments || []);
-    } catch (error) {
+    } catch {
       setPaymentHistory([
-        { _id: 'demo-h1', month: 'July', year: 2026, status: 'verified', transactionId: 'TRANS-001' },
+        { _id: 'demo-h1', month: 'September', year: new Date().getFullYear(), status: 'pending', transactionId: '' },
       ]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const upsertPayment = useCallback((payment) => {
+    if (!payment?._id) {
+      return;
+    }
+
+    setPaymentHistory((currentHistory) => [
+      payment,
+      ...currentHistory.filter((item) => item._id !== payment._id)
+    ]);
+  }, []);
 
   useEffect(() => {
     fetchCurrentPayment();
     fetchSummary();
     fetchHistory();
-  }, []);
+  }, [fetchCurrentPayment, fetchSummary, fetchHistory]);
 
   const value = {
     currentPayment,
@@ -83,6 +94,7 @@ export const PaymentProvider = ({ children }) => {
     fetchCurrentPayment,
     fetchSummary,
     fetchHistory,
+    upsertPayment,
     setCurrentPayment,
   };
 

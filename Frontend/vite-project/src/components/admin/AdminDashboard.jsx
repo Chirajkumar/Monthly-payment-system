@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import { FiUsers, FiCheckCircle, FiClock, FiTrendingUp, FiDownload } from 'react-icons/fi';
+import { useEffect, useState, useCallback } from 'react';
+import { FiUsers, FiCheckCircle, FiClock, FiTrendingUp, FiDownload, FiTrash2 } from 'react-icons/fi';
 import Navbar from '../common/Navbar';
 import Footer from '../common/Footer';
 import Loading from '../common/Loading';
-import { getMembers, getMonthlyStatus, getStatistics, verifyPayment } from '../../services/adminService';
+import { deleteMember, getMembers, getMonthlyStatus, getStatistics, verifyPayment } from '../../services/adminService';
 import { useAuth } from '../../context/AuthContext';
 
 const verificationYears = Array.from({ length: 2100 - 2024 + 1 }, (_, index) => 2024 + index);
@@ -24,10 +24,12 @@ const AdminDashboard = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [verifying, setVerifying] = useState(null);
+  const [removingMember, setRemovingMember] = useState(null);
   const [showPendingMembers, setShowPendingMembers] = useState(false);
+  const [error, setError] = useState('');
 
-  const fetchData = async (month, year) => {
-    setLoading(true);
+  const fetchData = useCallback(async (month, year, { silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [membersRes, statusRes, statsRes] = await Promise.all([
         getMembers({ limit: 20 }),
@@ -35,41 +37,52 @@ const AdminDashboard = () => {
         getStatistics(),
       ]);
 
-      console.log(`Monthly Status for ${month || selectedMonth} ${year || selectedYear}:`, statusRes.data);
       const monthlyStatuses = statusRes.data.data || [];
       const paidStatuses = monthlyStatuses.filter(({ payment }) =>
         payment && ['paid', 'verified'].includes(payment.status)
       );
-      const totalMonthlyMembers = Number(
-        statusRes.data.totalMembers ??
-        membersRes.data.pagination?.total ??
-        membersRes.data.members?.length ??
-        0
+      const pendingStatuses = monthlyStatuses.filter(({ payment }) =>
+        !payment || !['paid', 'verified'].includes(payment.status)
       );
       setMembers(membersRes.data.members || []);
       setMonthlyStatus(monthlyStatuses);
       setMonthlyPaidCount(paidStatuses.length);
-      setMonthlyPendingCount(Math.max(totalMonthlyMembers - paidStatuses.length, 0));
-      setStats(statsRes.data.statistics || stats);
+      setMonthlyPendingCount(pendingStatuses.length);
+      setStats((prev) => statsRes.data.statistics || prev);
+      setError('');
     } catch (error) {
       console.error('Failed to fetch admin data', error);
+      setError(error.response?.data?.message || 'Could not load monthly payments. Please refresh or try again.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  useEffect(() => {
+    const refreshSilently = () => {
+      if (document.visibilityState !== 'visible') return;
+      fetchData(undefined, undefined, { silent: true });
+    };
+    const interval = window.setInterval(refreshSilently, 30000);
+    window.addEventListener('focus', refreshSilently);
+    document.addEventListener('visibilitychange', refreshSilently);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshSilently);
+      document.removeEventListener('visibilitychange', refreshSilently);
+    };
+  }, [fetchData]);
 
   const handleMonthChange = (month) => {
     setSelectedMonth(month);
-    fetchData(month, selectedYear);
   };
 
   const handleYearChange = (year) => {
     setSelectedYear(year);
-    fetchData(selectedMonth, year);
   };
 
   const handleVerify = async (paymentId, status) => {
@@ -86,26 +99,65 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleRemoveMember = async (member) => {
+    if (!window.confirm(`Remove ${member.name} from active members? Their payment history will be kept.`)) {
+      return;
+    }
+
+    setRemovingMember(member._id);
+    try {
+      await deleteMember(member._id);
+      setMembers((currentMembers) =>
+        currentMembers.filter((currentMember) => currentMember._id !== member._id)
+      );
+      setMonthlyStatus((currentStatuses) =>
+        currentStatuses.filter(({ member: currentMember }) => currentMember.id !== member._id)
+      );
+      await fetchData(selectedMonth, selectedYear);
+    } catch (error) {
+      console.error('Failed to remove member', error);
+      alert('Failed to remove member: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setRemovingMember(null);
+    }
+  };
+
   const getStatusText = (status) => {
     if (status === 'verified' || status === 'paid') return 'Paid';
-    if (status === 'rejected') return 'Rejected';
-    if (status === 'cancelled') return 'Cancelled';
+    if (status === 'rejected' || status === 'cancelled') return 'Rejected';
     return status || 'Pending';
+  };
+
+  const getStatusClass = (status) => {
+    if (status === 'verified' || status === 'paid') return 'verified';
+    if (status === 'rejected' || status === 'cancelled') return 'rejected';
+    return 'pending';
+  };
+
+  const formatPaymentDate = (payment) => {
+    const date = payment?.paymentDate || payment?.createdAt;
+    if (!date) return 'Date unavailable';
+
+    const parsedDate = new Date(date);
+    return Number.isNaN(parsedDate.getTime())
+      ? 'Date unavailable'
+      : parsedDate.toLocaleDateString();
   };
 
   const downloadSheet = () => {
     const rows = [
-      ['Name', 'Member ID', 'Amount (Rs)', 'Payment Method', 'Paid To', 'Status']
+      ['Name', 'Member ID', 'Payment Date', 'Amount (Rs)', 'Payment Method', 'Paid To', 'Status']
     ];
 
     visibleMonthlyStatus.forEach(({ member, payment }) => {
       rows.push([
         member.name,
         member.memberId,
+        formatPaymentDate(payment),
         payment?.amount || 200,
         payment?.paymentMethod || '',
         payment?.paidTo || '',
-        getStatusText(payment?.status)
+        payment ? getStatusText(payment.status) : 'Not paid'
       ]);
     });
 
@@ -124,24 +176,14 @@ const AdminDashboard = () => {
     URL.revokeObjectURL(url);
   };
 
-  const visibleMonthlyStatus = monthlyStatus || [];
+  const visibleMonthlyStatus = (monthlyStatus || []).filter(({ payment }) =>
+    payment && ['paid', 'verified'].includes(payment.status)
+  );
 
   const pendingMembers = (monthlyStatus || []).filter(({ payment }) =>
     !payment || !['paid', 'verified'].includes(payment.status)
   );
-  const monthlyMemberIds = new Set((monthlyStatus || []).map(({ member }) => String(member?.id)));
-  const missingMembers = (members || [])
-    .filter((member) => !monthlyMemberIds.has(String(member._id)))
-    .map((member) => ({
-      member: {
-        id: member._id,
-        name: member.name,
-        memberId: member.memberId,
-        email: member.email
-      },
-      payment: null
-    }));
-  const displayedPendingMembers = [...pendingMembers, ...missingMembers];
+  const displayedPendingMembers = pendingMembers;
 
   const openPaymentProof = (url) => {
     if (!url) return;
@@ -234,7 +276,7 @@ const AdminDashboard = () => {
                       <strong>{member.name}</strong>
                       <small>{member.memberId} · {member.email || 'No email'}</small>
                     </div>
-                    <span className="badge pending">{payment ? 'Payment pending' : 'Not paid'}</span>
+                    <span className="badge pending">{payment ? getStatusText(payment.status) : 'Not paid'}</span>
                   </div>
                 ))}
               </div>
@@ -267,9 +309,20 @@ const AdminDashboard = () => {
                       <strong>{member.name}</strong>
                       <small>{member.memberId} · {member.email || 'No email'}</small>
                     </div>
-                    <span className={`badge ${member.isActive ? 'verified' : 'pending'}`}>
-                      {member.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                    <div className="verification-actions">
+                      <span className={`badge ${member.isActive ? 'verified' : 'pending'}`}>
+                        {member.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                      <button
+                        type="button"
+                        className="small-btn danger"
+                        onClick={() => handleRemoveMember(member)}
+                        disabled={removingMember === member._id}
+                      >
+                        <FiTrash2 />
+                        {removingMember === member._id ? 'Removing...' : 'Remove'}
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -303,16 +356,18 @@ const AdminDashboard = () => {
               </div>
             </div>
             <div className="verification-list">
+              {error && <p className="empty-state">{error}</p>}
               {loading ? (
                 <Loading text="Loading payments..." />
               ) : visibleMonthlyStatus.length === 0 ? (
-                <p className="empty-state">No payment records for this month.</p>
+                <p className="empty-state">No paid members found for this month.</p>
               ) : (
                 visibleMonthlyStatus.map(({ member, payment }) => (
                   <div className="verification-item" key={member.id}>
                     <div>
                       <strong>{payment?.payerName || member.name}</strong>
                       <small>{member.memberId} · Rs {payment?.amount || 200}</small>
+                      <small>Payment date: {formatPaymentDate(payment)}</small>
                       {payment?.paymentMethod === 'cash' && payment.paidTo && (
                         <small style={{ display: 'block', marginTop: '0.25rem', color: '#666' }}>
                           Cash given to: <strong>{payment.paidTo}</strong>
@@ -358,16 +413,30 @@ const AdminDashboard = () => {
                       )}
                     </div>
                     <div className="verification-actions">
-                      <span className={`badge ${payment?.status || 'pending'}`}>{getStatusText(payment?.status)}</span>
+                      <span className={`badge ${getStatusClass(payment?.status)}`}>{payment ? getStatusText(payment.status) : 'Not paid'}</span>
                       {payment?._id && (
-                        <button
-                          type="button"
-                          className="small-btn danger"
-                          onClick={() => handleVerify(payment._id, 'rejected')}
-                          disabled={verifying === payment._id}
-                        >
-                          {verifying === payment._id ? 'Updating...' : 'Rejected'}
-                        </button>
+                        <>
+                          {payment.status !== 'verified' && (
+                            <button
+                              type="button"
+                              className="small-btn success"
+                              onClick={() => handleVerify(payment._id, 'verified')}
+                              disabled={verifying === payment._id}
+                            >
+                              {verifying === payment._id ? 'Updating...' : 'Verify'}
+                            </button>
+                          )}
+                          {payment.status !== 'rejected' && (
+                            <button
+                              type="button"
+                              className="small-btn danger"
+                              onClick={() => handleVerify(payment._id, 'rejected')}
+                              disabled={verifying === payment._id}
+                            >
+                              {verifying === payment._id ? 'Updating...' : 'Reject'}
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

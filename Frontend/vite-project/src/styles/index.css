@@ -579,6 +579,20 @@ small {
   box-shadow: 0 5px 14px rgba(31, 94, 255, 0.08);
 }
 
+.auth-mode-toggle {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-weight: 700;
+  padding: 0.4rem;
+  cursor: pointer;
+}
+
+.auth-mode-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .info-strip {
   display: flex;
   justify-content: space-between;

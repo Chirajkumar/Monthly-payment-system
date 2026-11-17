@@ -1,5 +1,4 @@
 const Payment = require('../models/Payment');
-const MonthlyRequirement = require('../models/MonthlyRequirement');
 const User = require('../models/User');
 const cloudinary = require('cloudinary').v2;
 
@@ -17,7 +16,7 @@ exports.getCurrentMonthPayment = async (req, res) => {
       userId,
       month,
       year
-    });
+    }).sort({ createdAt: -1 });
 
     if (!payment) {
       // Create pending payment for the requested month
@@ -98,7 +97,7 @@ exports.submitPayment = async (req, res) => {
 
     const normalizedMethod = paymentMethod === 'online' ? 'online' : 'cash';
 
-    const existingPayment = await Payment.findOne({ userId, month, year });
+    const existingPayment = await Payment.findOne({ userId, month, year }).sort({ createdAt: -1 });
     const allowedResubmissionStatuses = ['pending', 'rejected'];
     if (existingPayment && !allowedResubmissionStatuses.includes(existingPayment.status)) {
       return res.status(400).json({
@@ -231,11 +230,13 @@ exports.getPaymentSummary = async (req, res) => {
 
     const monthsPaidCount = paidPayments.length;
 
+    const currentMonthStatus = currentMonthPayment?.status || 'pending';
+
     console.log('Response:', {
       totalPaid,
       totalPending,
       monthsPaid: monthsPaidCount,
-      currentStatus: currentMonthPayment?.status || 'pending'
+      currentStatus: currentMonthStatus
     });
     console.log('========== END SUMMARY ==========\n');
 
@@ -244,7 +245,7 @@ exports.getPaymentSummary = async (req, res) => {
       summary: {
         totalPaid: totalPaid,
         totalPending: totalPending,
-        currentMonthStatus: currentMonthPayment?.status || 'pending',
+        currentMonthStatus: currentMonthStatus,
         monthsPaid: monthsPaidCount
       }
     });

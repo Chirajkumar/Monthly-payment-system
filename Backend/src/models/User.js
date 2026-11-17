@@ -57,7 +57,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Generate unique member ID
-userSchema.pre('save', async function(next) {
+userSchema.pre('validate', async function(next) {
   if (this.memberId) {
     return next();
   }

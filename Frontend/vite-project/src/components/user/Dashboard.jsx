@@ -10,7 +10,7 @@ import uploadedQrCode from '../../assets/qrcode.jpeg';
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const { currentPayment, paymentSummary, paymentHistory, fetchCurrentPayment, fetchSummary, fetchHistory } = usePayments();
+  const { currentPayment, paymentSummary, paymentHistory, fetchCurrentPayment, fetchSummary, fetchHistory, upsertPayment } = usePayments();
   const today = new Date().toISOString().split('T')[0];
   const currentMonth = new Date().toLocaleString('default', { month: 'long' });
   const currentYear = new Date().getFullYear();
@@ -32,15 +32,47 @@ const Dashboard = () => {
     fetchCurrentPayment();
     fetchSummary();
     fetchHistory();
-  }, []);
+  }, [fetchCurrentPayment, fetchSummary, fetchHistory]);
 
   const isCashPayment = form.paymentMethod === 'cash';
   const filteredPaymentHistory = paymentHistory || [];
-  const currentStatusText = currentPayment?.status === 'rejected' || currentPayment?.status === 'cancelled'
-    ? 'Cancelled'
-    : currentPayment?.status === 'paid' || currentPayment?.status === 'verified'
-      ? 'Paid'
-      : currentPayment?.status || 'pending';
+
+  const getMonthYearFromDate = (value) => {
+    const parts = String(value || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+      return { month: currentMonth, year: currentYear };
+    }
+    const [year, monthNumber] = parts;
+    return {
+      month: new Date(year, monthNumber - 1, 1).toLocaleString('default', { month: 'long' }),
+      year
+    };
+  };
+
+  const getStatusLabel = (status) => {
+    if (status === 'paid' || status === 'verified') return 'Paid';
+    if (status === 'rejected' || status === 'cancelled') return 'Rejected';
+    if (status === 'pending') return 'Pending';
+    return status || 'Pending';
+  };
+
+  const getStatusClass = (status) => {
+    if (status === 'paid' || status === 'verified') return 'paid';
+    if (status === 'rejected' || status === 'cancelled') return 'rejected';
+    return 'pending';
+  };
+
+  const formatPaymentDate = (payment) => {
+    const date = payment?.paymentDate || payment?.createdAt;
+    if (!date) return 'Date unavailable';
+
+    const parsedDate = new Date(date);
+    return Number.isNaN(parsedDate.getTime())
+      ? 'Date unavailable'
+      : parsedDate.toLocaleDateString();
+  };
+
+  const currentStatusText = getStatusLabel(currentPayment?.status);
 
   const handleDownloadHistory = () => {
     if (!filteredPaymentHistory.length) {
@@ -48,11 +80,13 @@ const Dashboard = () => {
     }
 
     const rows = [
-      ['Month', 'Year', 'Status', 'Transaction ID'],
+      ['Member Name', 'Month', 'Year', 'Payment Date', 'Status', 'Transaction ID'],
       ...filteredPaymentHistory.map((item) => [
+        user?.name || '',
         item.month || '',
         item.year || '',
-        item.status || '',
+        formatPaymentDate(item),
+        getStatusLabel(item.status),
         item.transactionId || ''
       ])
     ];
@@ -123,9 +157,20 @@ const Dashboard = () => {
       return;
     }
 
+    if (form.paymentMethod === 'online' && form.proof && form.proof.size > 5 * 1024 * 1024) {
+      setMessage('Payment proof image is too large. Max size is 5MB.');
+      return;
+    }
+
+    if (form.paymentMethod === 'online' && form.proof && !/image\/(png|jpe?g|gif|webp)/i.test(form.proof.type)) {
+      setMessage('Payment proof must be an image (PNG, JPG, GIF, or WEBP).');
+      return;
+    }
+
     const data = new FormData();
-    data.append('month', form.month);
-    data.append('year', String(form.year));
+    const { month: submitMonth, year: submitYear } = getMonthYearFromDate(form.paymentDate);
+    data.append('month', submitMonth);
+    data.append('year', String(submitYear));
     data.append('paymentDate', form.paymentDate);
     data.append('paymentMethod', form.paymentMethod);
     data.append('paidTo', form.paidTo);
@@ -136,6 +181,7 @@ const Dashboard = () => {
     try {
       const { data: response } = await submitPayment(data);
       console.log('PAYMENT SUBMITTED:', response.payment);
+      upsertPayment(response.payment);
       setMessage(response.message || 'Payment submitted successfully');
       console.log('Refreshing payment data...');
       await Promise.all([fetchCurrentPayment(), fetchSummary(), fetchHistory()]);
@@ -153,7 +199,11 @@ const Dashboard = () => {
       }));
     } catch (error) {
       console.error('SUBMISSION ERROR:', error);
-      setMessage(error.response?.data?.message || 'Payment could not be submitted');
+      if (!error.response) {
+        setMessage('Cannot reach the server. Make sure the backend is running and you are logged in (not demo mode).');
+      } else {
+        setMessage(error.response.data?.message || 'Payment could not be submitted');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -189,6 +239,7 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
+
         </section>
 
         <section className="stats-grid">
@@ -222,9 +273,7 @@ const Dashboard = () => {
                   type="date"
                   value={form.paymentDate}
                   onChange={(e) => {
-                    const selectedDate = new Date(e.target.value);
-                    const month = selectedDate.toLocaleString('default', { month: 'long' });
-                    const year = selectedDate.getFullYear();
+                    const { month, year } = getMonthYearFromDate(e.target.value);
                     setForm({ ...form, paymentDate: e.target.value, month, year });
                   }}
                 />
@@ -341,15 +390,17 @@ const Dashboard = () => {
                 filteredPaymentHistory.map((item) => (
                   <div className="history-item" key={item._id || `${item.month}-${item.year}`}>
                     <div>
-                      <strong>{item.month} {item.year}</strong>
+                      <strong>{user?.name || 'Member'}</strong>
+                      <small>{item.month} {item.year} · Payment date: {formatPaymentDate(item)}</small>
                       <small>{item.transactionId || 'No transaction ID'}</small>
                     </div>
-                    <span className={`badge ${item.status}`}>{item.status}</span>
+                    <span className={`badge ${getStatusClass(item.status)}`}>{getStatusLabel(item.status)}</span>
                   </div>
                 ))
               )}
             </div>
           </div>
+
         </section>
       </main>
       <Footer />

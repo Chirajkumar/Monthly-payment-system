@@ -12,7 +12,9 @@ const fileFilter = (req, file, cb) => {
   if (extname && mimetype) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed'));
+    const err = new Error('Only image files are allowed (PNG, JPG, GIF, WEBP). Please upload a clear screenshot.');
+    err.status = 400;
+    cb(err);
   }
 };
 

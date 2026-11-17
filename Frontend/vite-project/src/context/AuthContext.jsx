@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 
@@ -36,15 +36,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
 
-  useEffect(() => {
-    if (token) {
-      fetchUser();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
-
-  const fetchUser = async () => {
+  const fetchUser = useCallback(async () => {
     try {
       const response = await api.get('/auth/me');
       setUser(response.data.user);
@@ -66,7 +58,29 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      fetchUser();
+    } else {
+      setLoading(false);
+    }
+  }, [token, fetchUser]);
+
+  useEffect(() => {
+    const handleExpired = () => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('demoUser');
+      setToken(null);
+      setUser(null);
+      toast.error('Session expired. Please login again.');
+    };
+
+    window.addEventListener('auth:expired', handleExpired);
+
+    return () => window.removeEventListener('auth:expired', handleExpired);
+  }, []);
 
   const login = async (name, dateOfBirth) => {
     try {
@@ -94,6 +108,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const registerMember = async (name, dateOfBirth) => {
+    try {
+      const response = await api.post('/auth/register', { name, dateOfBirth });
+      toast.success(response.data.message || 'Registration successful. You can now log in.');
+      return { success: true, member: response.data.member };
+    } catch (error) {
+      const message = error.response?.status === 404
+        ? 'Registration service is unavailable. Restart or redeploy the backend, then try again.'
+        : isNetworkFailure(error)
+          ? 'Cannot reach the server. Make sure the backend is running.'
+          : error.response?.data?.message || 'Registration failed. Please try again.';
+      toast.error(message);
+      return { success: false, error: message };
+    }
+  };
+
   const adminLogin = async (email, password) => {
     try {
       const response = await api.post('/auth/admin/login', { email, password });
@@ -106,13 +136,8 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user };
     } catch (error) {
       if (isNetworkFailure(error)) {
-        const demoUser = { ...DEMO_ADMIN, email: email || DEMO_ADMIN.email };
-        localStorage.setItem('token', 'demo-admin-token');
-        localStorage.setItem('demoUser', JSON.stringify(demoUser));
-        setToken('demo-admin-token');
-        setUser(demoUser);
-        toast.success('Demo mode: Welcome Admin!');
-        return { success: true, user: demoUser };
+        toast.error('Cannot reach the server. Make sure the backend is running.');
+        return { success: false, error: 'Cannot reach the server' };
       }
 
       toast.error(error.response?.data?.message || 'Login failed');
@@ -132,6 +157,7 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     login,
+    registerMember,
     adminLogin,
     logout,
     isAuthenticated: !!user,

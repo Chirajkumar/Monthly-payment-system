@@ -19,10 +19,10 @@ exports.auth = async (req, res, next) => {
     }
 
     next();
-  } catch (error) {
+  } catch {
     res.status(401).json({
       success: false,
-      message: 'Please authenticate'
+      message: 'Please authenticate. If you are in demo mode, the server is unreachable - log in again.'
     });
   }
 };
