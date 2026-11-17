@@ -703,24 +703,28 @@ small {
   margin-bottom: 0.75rem;
 }
 
-.upi-launch-link {
-  color: var(--primary);
-  text-decoration: none;
+.qr-download-link {
   display: inline-flex;
   align-items: center;
+  gap: 0.45rem;
   min-height: 44px;
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--primary);
   font-weight: 700;
+  text-decoration: none;
 }
 
-.qr-link {
-  display: block;
-  width: fit-content;
-  border-radius: 14px;
+.qr-download-link:hover {
+  background: #eef4ff;
 }
 
-.qr-link:focus-visible {
+.qr-download-link:focus-visible {
   outline: 3px solid rgba(31, 94, 255, 0.35);
-  outline-offset: 4px;
+  outline-offset: 2px;
 }
 
 .qr-section img {

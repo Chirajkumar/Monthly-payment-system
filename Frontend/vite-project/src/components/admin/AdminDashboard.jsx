@@ -3,7 +3,7 @@ import { FiUsers, FiCheckCircle, FiClock, FiTrendingUp, FiDownload, FiTrash2 } f
 import Navbar from '../common/Navbar';
 import Footer from '../common/Footer';
 import Loading from '../common/Loading';
-import { deleteMember, getMembers, getMonthlyStatus, getStatistics, verifyPayment } from '../../services/adminService';
+import { deleteMember, deletePayment, getMembers, getMonthlyStatus, getStatistics } from '../../services/adminService';
 import { useAuth } from '../../context/AuthContext';
 
 const verificationYears = Array.from({ length: 2100 - 2024 + 1 }, (_, index) => 2024 + index);
@@ -85,22 +85,25 @@ const AdminDashboard = () => {
     setSelectedYear(year);
   };
 
-  const handleVerify = async (paymentId, status) => {
-    setVerifying(paymentId);
+  const handleRemovePayment = async (payment) => {
+    if (!window.confirm(`Permanently remove this ${payment.month} ${payment.year} payment from the database and payment history?`)) {
+      return;
+    }
+
+    setVerifying(payment._id);
     try {
-      const response = await verifyPayment(paymentId, { status });
-      console.log('Payment verified:', response);
+      await deletePayment(payment._id);
       await fetchData(selectedMonth, selectedYear);
     } catch (error) {
-      console.error('Failed to update payment', error);
-      alert('Failed to update payment: ' + (error.response?.data?.message || error.message));
+      console.error('Failed to remove payment', error);
+      alert('Failed to remove payment: ' + (error.response?.data?.message || error.message));
     } finally {
       setVerifying(null);
     }
   };
 
   const handleRemoveMember = async (member) => {
-    if (!window.confirm(`Remove ${member.name} from active members? Their payment history will be kept.`)) {
+    if (!window.confirm(`Permanently remove ${member.name} and all their payment history? This cannot be undone.`)) {
       return;
     }
 
@@ -415,28 +418,15 @@ const AdminDashboard = () => {
                     <div className="verification-actions">
                       <span className={`badge ${getStatusClass(payment?.status)}`}>{payment ? getStatusText(payment.status) : 'Not paid'}</span>
                       {payment?._id && (
-                        <>
-                          {payment.status !== 'verified' && (
-                            <button
-                              type="button"
-                              className="small-btn success"
-                              onClick={() => handleVerify(payment._id, 'verified')}
-                              disabled={verifying === payment._id}
-                            >
-                              {verifying === payment._id ? 'Updating...' : 'Verify'}
-                            </button>
-                          )}
-                          {payment.status !== 'rejected' && (
-                            <button
-                              type="button"
-                              className="small-btn danger"
-                              onClick={() => handleVerify(payment._id, 'rejected')}
-                              disabled={verifying === payment._id}
-                            >
-                              {verifying === payment._id ? 'Updating...' : 'Reject'}
-                            </button>
-                          )}
-                        </>
+                        <button
+                          type="button"
+                          className="small-btn danger"
+                          onClick={() => handleRemovePayment(payment)}
+                          disabled={verifying === payment._id}
+                        >
+                          <FiTrash2 />
+                          {verifying === payment._id ? 'Removing...' : 'Remove'}
+                        </button>
                       )}
                     </div>
                   </div>

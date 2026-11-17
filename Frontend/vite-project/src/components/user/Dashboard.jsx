@@ -6,7 +6,7 @@ import { submitPayment } from '../../services/paymentService';
 import Navbar from '../common/Navbar';
 import Footer from '../common/Footer';
 import Loading from '../common/Loading';
-import uploadedQrCode from '../../assets/qrcode.jpeg';
+import uploadedQrCode from '../../assets/qrcode.png';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -104,39 +104,6 @@ const Dashboard = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  };
-
-  const paymentAmount = currentPayment?.amount || 200;
-  const upiParams = new URLSearchParams({
-    pa: 'chirajkenjila@oksbi',
-    pn: 'Chiraj Kenjila',
-    am: String(paymentAmount),
-    cu: 'INR',
-    tn: 'Kenjila Monthly Payment'
-  });
-  const upiLink = `upi://pay?${upiParams.toString()}`;
-  const googlePayLink = `intent://pay?${upiParams.toString()}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
-
-  const handleOpenGooglePay = (event) => {
-    event.preventDefault();
-    const clearFallback = () => {
-      window.clearTimeout(fallbackTimer);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        clearFallback();
-      }
-    };
-    const fallbackTimer = window.setTimeout(() => {
-      if (document.visibilityState === 'visible') {
-        window.location.href = upiLink;
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, 1200);
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.location.assign(googlePayLink);
   };
 
   const handleSubmit = async (e) => {
@@ -318,14 +285,12 @@ const Dashboard = () => {
                   <div className="qr-section">
                     <div className="qr-section-header">
                       <strong>Scan QR code</strong>
-                      <a href={googlePayLink} onClick={handleOpenGooglePay} className="upi-launch-link">
-                        Open Google Pay
-                      </a>
                     </div>
-                    <a href={googlePayLink} onClick={handleOpenGooglePay} className="qr-link" aria-label="Open Google Pay to pay">
-                      <img src={uploadedQrCode} alt="UPI QR code for Kenjila membership payment" />
+                    <img src={uploadedQrCode} alt="UPI QR code for Kenjila membership payment" />
+                    <a href={uploadedQrCode} download="kenjila-payment-qr.png" className="qr-download-link">
+                      <FiDownload /> Download QR code
                     </a>
-                    <p className="qr-help">Tap the QR code to pay with Google Pay</p>
+                    <p className="qr-help">Scan the QR code to pay</p>
                   </div>
 
                   <label>

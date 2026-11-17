@@ -71,13 +71,13 @@ const seedAdmin = async () => {
     return;
   }
 
-  const existing = await User.findOne({ email, isAdmin: true });
+  const existing = await User.findOne({ email, isAdmin: true }) ||
+    await User.findOne({ isAdmin: true });
   if (existing) {
-    if (!existing.password.startsWith('$2')) {
-      existing.password = await bcrypt.hash(password, 10);
-      await existing.save();
-      console.log('Admin password hashed');
-    }
+    existing.email = email;
+    existing.password = await bcrypt.hash(password, 10);
+    await existing.save();
+    console.log('Admin credentials synchronized from environment');
     return;
   }
 

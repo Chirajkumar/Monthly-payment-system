@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const Payment = require('../models/Payment');
 
+const removePaymentRecord = (paymentId) => Payment.findByIdAndDelete(paymentId);
+
 // Get all members
 exports.getAllMembers = async (req, res) => {
   try {
@@ -116,13 +118,24 @@ exports.updateMember = async (req, res) => {
 
 // Delete member
 exports.deleteMember = async (req, res) => {
-  try {
-    const { id } = req.params;
+  let session;
 
-    const user = await User.findOneAndUpdate(
-      { _id: id, isAdmin: false, isActive: true },
-      { isActive: false }
-    );
+  try {
+    session = await User.startSession();
+    const { id } = req.params;
+    let user;
+
+    await session.withTransaction(async () => {
+      user = await User.findOneAndDelete(
+        { _id: id, isAdmin: false, isActive: true },
+        { session }
+      );
+
+      if (user) {
+        await Payment.deleteMany({ userId: user._id }, { session });
+      }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -132,13 +145,17 @@ exports.deleteMember = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Member removed successfully'
+      message: 'Member and payment history removed successfully'
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: error.message
     });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 };
 
@@ -213,6 +230,21 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
+    if (normalizedStatus === 'rejected') {
+      const payment = await removePaymentRecord(paymentId);
+      if (!payment) {
+        return res.status(404).json({
+          success: false,
+          message: 'Payment not found'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Payment rejected and removed successfully'
+      });
+    }
+
     const payment = await Payment.findByIdAndUpdate(
       paymentId,
       {
@@ -233,12 +265,30 @@ exports.verifyPayment = async (req, res) => {
 
     res.json({
       success: true,
-      message: normalizedStatus === 'verified'
-        ? 'Payment approved successfully'
-        : normalizedStatus === 'rejected'
-          ? 'Payment rejected successfully'
-          : `Payment status updated to ${normalizedStatus}`,
+      message: 'Payment approved successfully',
       payment
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+exports.deletePayment = async (req, res) => {
+  try {
+    const payment = await removePaymentRecord(req.params.paymentId);
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment removed successfully'
     });
   } catch (error) {
     res.status(500).json({
