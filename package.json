@@ -1,0 +1,9 @@
+{
+  "name": "monthly-payment-system",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm ci --prefix Backend --omit=dev",
+    "start": "npm --prefix Backend start"
+  }
+}

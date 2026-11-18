@@ -61,3 +61,17 @@ Frontend/vite-project/
    npm install
    npm run dev
    ```
+
+## Backend deployment on Render
+
+The root `package.json` delegates Render's root-level install and start commands to `Backend`. Use `npm install` (or `yarn install`) as the build command and `npm start` (or `yarn start`) as the start command. The backend listens on Render's `PORT`.
+
+Configure these environment variables in Render:
+
+- `MONGODB_URI`: MongoDB Atlas connection string
+- `JWT_SECRET`: a long, random signing secret
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD`: initial admin credentials
+- `NODE_ENV`: `production`
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` if payment-proof uploads are enabled
+
+Never commit production credentials. After updating the Render service, trigger a new deploy and check its logs for a successful MongoDB connection and server startup.
