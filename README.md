@@ -75,3 +75,5 @@ Configure these environment variables in Render:
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` if payment-proof uploads are enabled
 
 Never commit production credentials. After updating the Render service, trigger a new deploy and check its logs for a successful MongoDB connection and server startup.
+
+For the Vercel frontend, set `VITE_API_URL` to `https://<your-render-service>.onrender.com/api` in the Vercel project's environment variables, then redeploy the frontend. The default `/api` value is intended for the local Vite development proxy.
