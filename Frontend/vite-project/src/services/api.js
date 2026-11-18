@@ -1,7 +1,14 @@
 import axios from 'axios';
 
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+const apiBaseUrl = import.meta.env.PROD
+  ? configuredApiUrl && configuredApiUrl !== '/api'
+    ? configuredApiUrl
+    : 'https://monthly-payment-system.onrender.com/api'
+  : configuredApiUrl || '/api';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: apiBaseUrl,
   timeout: 20000,
   headers: {
     'Content-Type': 'application/json',

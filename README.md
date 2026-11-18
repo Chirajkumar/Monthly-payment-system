@@ -76,4 +76,4 @@ Configure these environment variables in Render:
 
 Never commit production credentials. After updating the Render service, trigger a new deploy and check its logs for a successful MongoDB connection and server startup.
 
-For the Vercel frontend, set `VITE_API_URL` to `https://<your-render-service>.onrender.com/api` in the Vercel project's environment variables, then redeploy the frontend. The default `/api` value is intended for the local Vite development proxy.
+The Vercel production build uses the Render API URL by default; set `VITE_API_URL` in Vercel only if you use a different backend. `Frontend/vite-project/vercel.json` provides the SPA fallback for routes such as `/login`. The default `/api` value is intended for the local Vite development proxy.
